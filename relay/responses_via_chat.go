@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -309,11 +308,6 @@ func applyModelMapping(info *relaycommon.RelayInfo, chatReq *dto.GeneralOpenAIRe
 		if mappedModel, ok := info.ChannelSetting.ModelMapping[chatReq.Model]; ok {
 			chatReq.Model = mappedModel
 		}
-	}
-
-	// Codex prefers lowercase model names
-	if info.ChannelMeta != nil && info.ChannelMeta.ChannelType == constant.ChannelTypeCodex {
-		chatReq.Model = strings.ToLower(chatReq.Model)
 	}
 }
 

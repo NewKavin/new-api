@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -22,18 +21,6 @@ import (
 
 func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
-	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
-		switch info.ApiType {
-		case appconstant.APITypeOpenAI, appconstant.APITypeCodex:
-		default:
-			return types.NewErrorWithStatusCode(
-				fmt.Errorf("unsupported endpoint %q for api type %d", "/v1/responses/compact", info.ApiType),
-				types.ErrorCodeInvalidRequest,
-				http.StatusBadRequest,
-				types.ErrOptionWithSkipRetry(),
-			)
-		}
-	}
 
 	var responsesReq *dto.OpenAIResponsesRequest
 	switch req := info.Request.(type) {
@@ -63,6 +50,34 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	err = helper.ModelMappedHelper(c, info, request)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
+	}
+
+	supportsNativeResponses := SupportsNativeResponses(info.ApiType, info.ChannelType)
+	supportsResponsesViaChat := SupportsResponsesViaChat(info.ApiType, info.ChannelType)
+	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
+		if supportsResponsesViaChat {
+			return ResponsesCompactLocalHelper(c, info, request)
+		}
+		if !supportsNativeResponses {
+			return types.NewErrorWithStatusCode(
+				fmt.Errorf("unsupported endpoint %q for api type %d", "/v1/responses/compact", info.ApiType),
+				types.ErrorCodeInvalidRequest,
+				http.StatusBadRequest,
+				types.ErrOptionWithSkipRetry(),
+			)
+		}
+	} else {
+		if supportsResponsesViaChat && !supportsNativeResponses {
+			return ResponsesViaChatHelper(c, info, request)
+		}
+		if !supportsNativeResponses {
+			return types.NewErrorWithStatusCode(
+				fmt.Errorf("unsupported endpoint %q for api type %d", "/v1/responses", info.ApiType),
+				types.ErrorCodeInvalidRequest,
+				http.StatusBadRequest,
+				types.ErrOptionWithSkipRetry(),
+			)
+		}
 	}
 
 	adaptor := GetAdaptor(info.ApiType)

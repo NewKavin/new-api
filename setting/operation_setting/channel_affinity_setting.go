@@ -41,6 +41,10 @@ var codexCliPassThroughHeaders = []string{
 	"User-Agent",
 	"X-Codex-Beta-Features",
 	"X-Codex-Turn-Metadata",
+	"X-Codex-Installation-Id",
+	"X-Codex-Parent-Thread-Id",
+	"X-Codex-Window-Id",
+	"X-Codex-Turn-State",
 }
 
 var claudeCliPassThroughHeaders = []string{

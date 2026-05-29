@@ -160,6 +160,11 @@ func GetResponseID(c *gin.Context) string {
 	return fmt.Sprintf("chatcmpl-%s", logID)
 }
 
+func GetResponsesID(c *gin.Context) string {
+	logID := c.GetString(common.RequestIdKey)
+	return fmt.Sprintf("resp_%s", logID)
+}
+
 func GetLocalRealtimeID(c *gin.Context) string {
 	logID := c.GetString(common.RequestIdKey)
 	return fmt.Sprintf("evt_%s", logID)

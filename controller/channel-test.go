@@ -347,7 +347,12 @@ func testChannel(channel *model.Channel, testUserID int, testModel string, endpo
 	case relayconstant.RelayModeResponses:
 		// Response 请求 - request 已经是正确的类型
 		if responseReq, ok := request.(*dto.OpenAIResponsesRequest); ok {
-			convertedRequest, err = adaptor.ConvertOpenAIResponsesRequest(c, info, *responseReq)
+			if relay.SupportsResponsesViaChat(info.ApiType, info.ChannelType) &&
+				!relay.SupportsNativeResponses(info.ApiType, info.ChannelType) {
+				convertedRequest, err = service.ResponsesRequestToChatCompletionsRequest(responseReq)
+			} else {
+				convertedRequest, err = adaptor.ConvertOpenAIResponsesRequest(c, info, *responseReq)
+			}
 		} else {
 			return testResult{
 				context:     c,
@@ -359,14 +364,25 @@ func testChannel(channel *model.Channel, testUserID int, testModel string, endpo
 		// Response compaction request - convert to OpenAIResponsesRequest before adapting
 		switch req := request.(type) {
 		case *dto.OpenAIResponsesCompactionRequest:
-			convertedRequest, err = adaptor.ConvertOpenAIResponsesRequest(c, info, dto.OpenAIResponsesRequest{
+			responseReq := &dto.OpenAIResponsesRequest{
 				Model:              req.Model,
 				Input:              req.Input,
 				Instructions:       req.Instructions,
 				PreviousResponseID: req.PreviousResponseID,
-			})
+			}
+			if relay.SupportsResponsesViaChat(info.ApiType, info.ChannelType) &&
+				!relay.SupportsNativeResponses(info.ApiType, info.ChannelType) {
+				convertedRequest, err = service.ResponsesRequestToChatCompletionsRequest(responseReq)
+			} else {
+				convertedRequest, err = adaptor.ConvertOpenAIResponsesRequest(c, info, *responseReq)
+			}
 		case *dto.OpenAIResponsesRequest:
-			convertedRequest, err = adaptor.ConvertOpenAIResponsesRequest(c, info, *req)
+			if relay.SupportsResponsesViaChat(info.ApiType, info.ChannelType) &&
+				!relay.SupportsNativeResponses(info.ApiType, info.ChannelType) {
+				convertedRequest, err = service.ResponsesRequestToChatCompletionsRequest(req)
+			} else {
+				convertedRequest, err = adaptor.ConvertOpenAIResponsesRequest(c, info, *req)
+			}
 		default:
 			return testResult{
 				context:     c,

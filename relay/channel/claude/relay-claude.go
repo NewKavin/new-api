@@ -1,10 +1,12 @@
 package claude
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -375,6 +377,78 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 								Type: "text",
 								Text: common.GetPointer[string](mediaMessage.Text),
 							})
+						}
+					case dto.ContentTypeFile:
+						file := mediaMessage.GetFile()
+						if file == nil || strings.TrimSpace(file.FileData) == "" {
+							continue
+						}
+
+						ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(strings.TrimSpace(file.FileName))), ".")
+						mimeTypeByExt := service.GetMimeTypeByExtension(ext)
+						switch {
+						case mimeTypeByExt == "application/pdf":
+							cleanBase64 := strings.TrimSpace(file.FileData)
+							if strings.HasPrefix(cleanBase64, "data:") {
+								if idx := strings.Index(cleanBase64, ","); idx >= 0 {
+									cleanBase64 = cleanBase64[idx+1:]
+								}
+							}
+							if cleanBase64 == "" {
+								continue
+							}
+							claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
+								Type: "document",
+								Source: &dto.ClaudeMessageSource{
+									Type:      "base64",
+									MediaType: "application/pdf",
+									Data:      cleanBase64,
+								},
+							})
+						case mimeTypeByExt == "text/plain":
+							cleanBase64 := strings.TrimSpace(file.FileData)
+							if strings.HasPrefix(cleanBase64, "data:") {
+								if idx := strings.Index(cleanBase64, ","); idx >= 0 {
+									cleanBase64 = cleanBase64[idx+1:]
+								}
+							}
+							if cleanBase64 == "" {
+								continue
+							}
+							raw, err := base64.StdEncoding.DecodeString(cleanBase64)
+							if err != nil {
+								return nil, fmt.Errorf("decode text file failed: %w", err)
+							}
+							if len(raw) == 0 {
+								continue
+							}
+							text := string(raw)
+							claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
+								Type: "text",
+								Text: common.GetPointer[string](text),
+							})
+						case strings.HasPrefix(mimeTypeByExt, "image/"):
+							cleanBase64 := strings.TrimSpace(file.FileData)
+							if strings.HasPrefix(cleanBase64, "data:") {
+								if idx := strings.Index(cleanBase64, ","); idx >= 0 {
+									cleanBase64 = cleanBase64[idx+1:]
+								}
+							}
+							if cleanBase64 == "" {
+								continue
+							}
+							claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
+								Type: "image",
+								Source: &dto.ClaudeMessageSource{
+									Type:      "base64",
+									MediaType: mimeTypeByExt,
+									Data:      cleanBase64,
+								},
+							})
+						default:
+							// Claude currently accepts only a limited subset for inline documents.
+							// Unknown file types should be ignored instead of being misclassified as images.
+							continue
 						}
 					default:
 						source := mediaMessage.ToFileSource()

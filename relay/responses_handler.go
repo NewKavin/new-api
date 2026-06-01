@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -54,6 +55,13 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 
 	supportsNativeResponses := SupportsNativeResponses(info.ApiType, info.ChannelType)
 	supportsResponsesViaChat := SupportsResponsesViaChat(info.ApiType, info.ChannelType)
+	apiKey := strings.Trim(strings.TrimSpace(info.ApiKey), "\"")
+	if info.ChannelType == constant.ChannelTypeCodex && !strings.HasPrefix(apiKey, "{") {
+		// Codex channel with a plain API key is treated as OpenAI-compatible upstream.
+		// In this mode we should fallback /v1/responses to /v1/chat/completions.
+		supportsNativeResponses = false
+		supportsResponsesViaChat = true
+	}
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
 		if supportsResponsesViaChat {
 			return ResponsesCompactLocalHelper(c, info, request)

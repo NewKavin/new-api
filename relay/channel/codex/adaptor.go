@@ -21,11 +21,24 @@ import (
 type Adaptor struct {
 }
 
+func usesOpenAICompatMode(info *relaycommon.RelayInfo) bool {
+	if info == nil {
+		return false
+	}
+	key := strings.Trim(strings.TrimSpace(info.ApiKey), "\"")
+	return !strings.HasPrefix(key, "{")
+}
+
 func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeminiChatRequest) (any, error) {
 	return nil, errors.New("codex channel: endpoint not supported")
 }
 
-func (a *Adaptor) ConvertClaudeRequest(*gin.Context, *relaycommon.RelayInfo, *dto.ClaudeRequest) (any, error) {
+func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayInfo, req *dto.ClaudeRequest) (any, error) {
+	if usesOpenAICompatMode(info) {
+		compatAdaptor := &openai.Adaptor{}
+		compatAdaptor.Init(info)
+		return compatAdaptor.ConvertClaudeRequest(c, info, req)
+	}
 	return nil, errors.New("codex channel: /v1/messages endpoint not supported")
 }
 
@@ -41,6 +54,9 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
+	if usesOpenAICompatMode(info) {
+		return request, nil
+	}
 	return nil, errors.New("codex channel: /v1/chat/completions endpoint not supported")
 }
 
@@ -112,6 +128,12 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
+	if usesOpenAICompatMode(info) {
+		compatAdaptor := &openai.Adaptor{}
+		compatAdaptor.Init(info)
+		return compatAdaptor.DoResponse(c, resp, info)
+	}
+
 	if info.RelayMode != relayconstant.RelayModeResponses && info.RelayMode != relayconstant.RelayModeResponsesCompact {
 		return nil, types.NewError(errors.New("codex channel: endpoint not supported"), types.ErrorCodeInvalidRequest)
 	}
@@ -135,6 +157,12 @@ func (a *Adaptor) GetChannelName() string {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	if usesOpenAICompatMode(info) {
+		compatAdaptor := &openai.Adaptor{}
+		compatAdaptor.Init(info)
+		return compatAdaptor.GetRequestURL(info)
+	}
+
 	if info.RelayMode != relayconstant.RelayModeResponses && info.RelayMode != relayconstant.RelayModeResponsesCompact {
 		return "", errors.New("codex channel: only /v1/responses and /v1/responses/compact are supported")
 	}
@@ -148,9 +176,18 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
 
-	key := strings.TrimSpace(info.ApiKey)
-	if !strings.HasPrefix(key, "{") {
-		return errors.New("codex channel: key must be a JSON object")
+	key := strings.Trim(strings.TrimSpace(info.ApiKey), "\"")
+	if usesOpenAICompatMode(info) {
+		req.Set("Authorization", "Bearer "+key)
+		if req.Get("Content-Type") == "" {
+			req.Set("Content-Type", "application/json")
+		}
+		if info.IsStream {
+			req.Set("Accept", "text/event-stream")
+		} else if req.Get("Accept") == "" {
+			req.Set("Accept", "application/json")
+		}
+		return nil
 	}
 
 	oauthKey, err := ParseOAuthKey(key)

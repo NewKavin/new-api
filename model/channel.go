@@ -293,6 +293,47 @@ func (channel *Channel) GetModels() []string {
 	return strings.Split(strings.Trim(channel.Models, ","), ",")
 }
 
+// GetAbilityModels returns all model names that should participate in routing.
+// It includes explicit channel models and source-side model_mapping aliases.
+func (channel *Channel) GetAbilityModels() []string {
+	abilityModels := make([]string, 0)
+	modelSet := make(map[string]struct{})
+	appendModel := func(model string) {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			return
+		}
+		if _, exists := modelSet[model]; exists {
+			return
+		}
+		modelSet[model] = struct{}{}
+		abilityModels = append(abilityModels, model)
+	}
+
+	for _, modelName := range channel.GetModels() {
+		appendModel(modelName)
+	}
+
+	modelMappingStr := strings.TrimSpace(channel.GetModelMapping())
+	if modelMappingStr == "" || modelMappingStr == "{}" {
+		return abilityModels
+	}
+
+	modelMap := make(map[string]string)
+	if err := common.UnmarshalJsonStr(modelMappingStr, &modelMap); err != nil {
+		common.SysLog(fmt.Sprintf("failed to parse channel model mapping while building abilities: channel_id=%d, error=%v", channel.Id, err))
+		return abilityModels
+	}
+
+	for sourceModel, mappedModel := range modelMap {
+		if strings.TrimSpace(mappedModel) == "" {
+			continue
+		}
+		appendModel(sourceModel)
+	}
+	return abilityModels
+}
+
 func (channel *Channel) GetGroups() []string {
 	if channel.Group == "" {
 		return []string{}
@@ -807,6 +848,7 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 	}
 	if modelMapping != nil {
 		updateData.ModelMapping = modelMapping
+		shouldReCreateAbilities = true
 	}
 	if models != nil && *models != "" {
 		shouldReCreateAbilities = true

@@ -18,14 +18,18 @@ func ResponsesRequestToChatCompletionsRequest(req *dto.OpenAIResponsesRequest) (
 		return nil, errors.New("model is required")
 	}
 
+	stream := lo.FromPtrOr(req.Stream, false)
+
 	out := &dto.GeneralOpenAIRequest{
-		Model:         req.Model,
-		Stream:        req.Stream,
-		StreamOptions: req.StreamOptions,
-		Temperature:   req.Temperature,
-		TopP:          req.TopP,
-		TopLogProbs:   req.TopLogProbs,
-		Metadata:      req.Metadata,
+		Model:       req.Model,
+		Stream:      &stream,
+		Temperature: req.Temperature,
+		TopP:        req.TopP,
+		TopLogProbs: req.TopLogProbs,
+		Metadata:    req.Metadata,
+	}
+	if stream {
+		out.StreamOptions = req.StreamOptions
 	}
 
 	if req.MaxOutputTokens != nil {
@@ -139,7 +143,7 @@ func parseResponsesInputToChatMessages(raw []byte) ([]dto.Message, error) {
 
 	messages := make([]dto.Message, 0, len(items))
 	for _, item := range items {
-		if itemType := common.Interface2String(item["type"]); itemType != "" {
+		if itemType := common.Interface2String(item["type"]); itemType != "" && itemType != "message" {
 			switch itemType {
 			case "function_call":
 				callID := strings.TrimSpace(common.Interface2String(item["call_id"]))
@@ -188,11 +192,14 @@ func parseResponsesInputToChatMessages(raw []byte) ([]dto.Message, error) {
 			continue
 		}
 
-		role := strings.TrimSpace(common.Interface2String(item["role"]))
+		role := normalizeResponsesChatRole(common.Interface2String(item["role"]))
 		if role == "" {
 			continue
 		}
 		content := responsesContentToChatContent(item["content"], role)
+		if role == "system" {
+			content = responsesContentToSystemString(content)
+		}
 		msg := dto.Message{
 			Role:    role,
 			Content: content,
@@ -200,6 +207,34 @@ func parseResponsesInputToChatMessages(raw []byte) ([]dto.Message, error) {
 		messages = append(messages, msg)
 	}
 	return messages, nil
+}
+
+func normalizeResponsesChatRole(role string) string {
+	role = strings.TrimSpace(role)
+	if role == "developer" {
+		return "system"
+	}
+	return role
+}
+
+func responsesContentToSystemString(content any) string {
+	switch v := content.(type) {
+	case string:
+		return v
+	case []map[string]any:
+		parts := make([]string, 0, len(v))
+		for _, part := range v {
+			if common.Interface2String(part["type"]) == "text" {
+				text := strings.TrimSpace(common.Interface2String(part["text"]))
+				if text != "" {
+					parts = append(parts, text)
+				}
+			}
+		}
+		return strings.Join(parts, "\n")
+	default:
+		return common.Interface2String(v)
+	}
 }
 
 func responsesContentToChatContent(raw any, role string) any {

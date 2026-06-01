@@ -148,3 +148,156 @@ func TestResponsesRequestToChatCompletionsRequest_RejectsNil(t *testing.T) {
 		t.Fatalf("expected error for nil request")
 	}
 }
+
+func TestResponsesRequestToChatCompletionsRequest_MessageItemInput(t *testing.T) {
+	inputRaw, _ := common.Marshal([]map[string]any{
+		{
+			"type": "message",
+			"role": "user",
+			"content": []map[string]any{
+				{"type": "input_text", "text": "Reply exactly: OK"},
+			},
+		},
+	})
+
+	req := &dto.OpenAIResponsesRequest{
+		Model: "ZhipuAI/GLM-5",
+		Input: inputRaw,
+	}
+
+	out, err := ResponsesRequestToChatCompletionsRequest(req)
+	if err != nil {
+		t.Fatalf("ResponsesRequestToChatCompletionsRequest returned error: %v", err)
+	}
+	if len(out.Messages) != 1 {
+		t.Fatalf("messages length = %d, want 1", len(out.Messages))
+	}
+	if out.Messages[0].Role != "user" {
+		t.Fatalf("message role = %q, want user", out.Messages[0].Role)
+	}
+	parts, ok := out.Messages[0].Content.([]map[string]any)
+	if !ok {
+		t.Fatalf("message content type = %T, want []map[string]any", out.Messages[0].Content)
+	}
+	if len(parts) != 1 || parts[0]["type"] != "text" || parts[0]["text"] != "Reply exactly: OK" {
+		t.Fatalf("unexpected message content: %#v", parts)
+	}
+}
+
+func TestResponsesRequestToChatCompletionsRequest_DeveloperRoleMapsToSystem(t *testing.T) {
+	inputRaw, _ := common.Marshal([]map[string]any{
+		{
+			"type":    "message",
+			"role":    "developer",
+			"content": "Follow repo instructions.",
+		},
+		{
+			"type":    "message",
+			"role":    "user",
+			"content": "Reply exactly: OK",
+		},
+	})
+
+	req := &dto.OpenAIResponsesRequest{
+		Model: "ZhipuAI/GLM-5",
+		Input: inputRaw,
+	}
+
+	out, err := ResponsesRequestToChatCompletionsRequest(req)
+	if err != nil {
+		t.Fatalf("ResponsesRequestToChatCompletionsRequest returned error: %v", err)
+	}
+	if len(out.Messages) != 2 {
+		t.Fatalf("messages length = %d, want 2", len(out.Messages))
+	}
+	if out.Messages[0].Role != "system" {
+		t.Fatalf("first message role = %q, want system", out.Messages[0].Role)
+	}
+	if out.Messages[0].StringContent() != "Follow repo instructions." {
+		t.Fatalf("first message content = %q, want developer content", out.Messages[0].StringContent())
+	}
+	if out.Messages[1].Role != "user" {
+		t.Fatalf("second message role = %q, want user", out.Messages[1].Role)
+	}
+}
+
+func TestResponsesRequestToChatCompletionsRequest_DeveloperContentPartsBecomeSystemString(t *testing.T) {
+	inputRaw, _ := common.Marshal([]map[string]any{
+		{
+			"type": "message",
+			"role": "developer",
+			"content": []map[string]any{
+				{"type": "input_text", "text": "First instruction."},
+				{"type": "input_text", "text": "Second instruction."},
+			},
+		},
+	})
+
+	req := &dto.OpenAIResponsesRequest{
+		Model: "ZhipuAI/GLM-5",
+		Input: inputRaw,
+	}
+
+	out, err := ResponsesRequestToChatCompletionsRequest(req)
+	if err != nil {
+		t.Fatalf("ResponsesRequestToChatCompletionsRequest returned error: %v", err)
+	}
+	if len(out.Messages) != 1 {
+		t.Fatalf("messages length = %d, want 1", len(out.Messages))
+	}
+	if out.Messages[0].Role != "system" {
+		t.Fatalf("message role = %q, want system", out.Messages[0].Role)
+	}
+	if out.Messages[0].StringContent() != "First instruction.\nSecond instruction." {
+		t.Fatalf("message content = %q, want joined system text", out.Messages[0].StringContent())
+	}
+}
+
+func TestResponsesRequestToChatCompletionsRequest_NonStreamDefaultsToFalseAndDropsStreamOptions(t *testing.T) {
+	req := &dto.OpenAIResponsesRequest{
+		Model: "ZhipuAI/GLM-5.1",
+		Input: common.StringToByteSlice(`"hi"`),
+		StreamOptions: &dto.StreamOptions{
+			IncludeUsage: true,
+		},
+	}
+
+	out, err := ResponsesRequestToChatCompletionsRequest(req)
+	if err != nil {
+		t.Fatalf("ResponsesRequestToChatCompletionsRequest returned error: %v", err)
+	}
+	if out.Stream == nil {
+		t.Fatalf("stream should be explicitly set to false for non-stream requests")
+	}
+	if *out.Stream {
+		t.Fatalf("stream = true, want false")
+	}
+	if out.StreamOptions != nil {
+		t.Fatalf("stream_options should be omitted for non-stream requests")
+	}
+}
+
+func TestResponsesRequestToChatCompletionsRequest_StreamFalseDropsStreamOptions(t *testing.T) {
+	req := &dto.OpenAIResponsesRequest{
+		Model:  "ZhipuAI/GLM-5.1",
+		Input:  common.StringToByteSlice(`"hi"`),
+		Stream: lo.ToPtr(false),
+		StreamOptions: &dto.StreamOptions{
+			IncludeUsage: true,
+		},
+	}
+
+	out, err := ResponsesRequestToChatCompletionsRequest(req)
+	if err != nil {
+		t.Fatalf("ResponsesRequestToChatCompletionsRequest returned error: %v", err)
+	}
+	if out.Stream == nil {
+		t.Fatalf("stream should be explicitly set to false")
+	}
+	if *out.Stream {
+		t.Fatalf("stream = true, want false")
+	}
+	if out.StreamOptions != nil {
+		t.Fatalf("stream_options should be omitted when stream is false")
+	}
+}

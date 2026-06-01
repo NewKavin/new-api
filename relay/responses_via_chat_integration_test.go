@@ -74,6 +74,9 @@ func TestResponsesViaChatIntegration_MiniMaxNonStreamInstructionsReplacement(t *
 			Model:        "MiniMax-M2.7",
 			Input:        mustMarshal(t, "hello"),
 			Instructions: mustMarshal(t, "old instructions"),
+			StreamOptions: &dto.StreamOptions{
+				IncludeUsage: true,
+			},
 		},
 	)
 
@@ -94,7 +97,18 @@ func TestResponsesViaChatIntegration_MiniMaxNonStreamInstructionsReplacement(t *
 		t.Fatalf("captured request count = %d, want 2", len(chatReqs))
 	}
 	secondReq := chatReqs[1]
+	firstReq := chatReqs[0]
 	reqMu.Unlock()
+
+	if firstReq.Stream == nil {
+		t.Fatalf("first chat request stream should be explicitly false")
+	}
+	if *firstReq.Stream {
+		t.Fatalf("first chat request stream = true, want false")
+	}
+	if firstReq.StreamOptions != nil {
+		t.Fatalf("first chat request should not include stream_options for non-stream responses fallback")
+	}
 
 	systemMessages := 0
 	for _, msg := range secondReq.Messages {

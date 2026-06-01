@@ -106,4 +106,16 @@ func TestChatCompletionsResponseToResponsesResponse_ToolCall(t *testing.T) {
 	if out.ArgumentsString() != "{\"path\":\".\"}" {
 		t.Fatalf("arguments = %q, want {\"path\":\".\"}", out.ArgumentsString())
 	}
+
+	raw, err := common.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal output failed: %v", err)
+	}
+	var encoded map[string]any
+	if err := common.Unmarshal(raw, &encoded); err != nil {
+		t.Fatalf("unmarshal encoded output failed: %v", err)
+	}
+	if _, ok := encoded["arguments"].(string); !ok {
+		t.Fatalf("encoded arguments type = %T, want string; raw=%s", encoded["arguments"], raw)
+	}
 }

@@ -86,10 +86,18 @@ func buildResponsesOutputFromChatMessage(msg dto.Message) []dto.ResponsesOutput 
 			Status:    "completed",
 			CallId:    call.ID,
 			Name:      call.Function.Name,
-			Arguments: common.StringToByteSlice(call.Function.Arguments),
+			Arguments: responsesFunctionCallArgumentsRaw(call.Function.Arguments),
 		})
 	}
 	return output
+}
+
+func responsesFunctionCallArgumentsRaw(arguments string) json.RawMessage {
+	raw, err := common.Marshal(arguments)
+	if err != nil {
+		return common.StringToByteSlice(`""`)
+	}
+	return raw
 }
 
 func parseResponsesOutputTools(raw json.RawMessage) []map[string]any {

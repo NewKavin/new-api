@@ -127,4 +127,7 @@ func TestResponsesViaChatStreamHandler_ToolCallFlow(t *testing.T) {
 	if !strings.Contains(body, "event: response.function_call_arguments.done") {
 		t.Fatalf("missing response.function_call_arguments.done event: %s", body)
 	}
+	if !strings.Contains(body, `"arguments":"{\"path\":\".\"}"`) {
+		t.Fatalf("function_call arguments should be encoded as a JSON string: %s", body)
+	}
 }

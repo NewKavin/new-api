@@ -62,6 +62,10 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		supportsNativeResponses = false
 		supportsResponsesViaChat = true
 	}
+	if info.ChannelOtherSettings.ResponsesViaChatEnabled {
+		supportsNativeResponses = false
+		supportsResponsesViaChat = true
+	}
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
 		if supportsResponsesViaChat {
 			return ResponsesCompactLocalHelper(c, info, request)

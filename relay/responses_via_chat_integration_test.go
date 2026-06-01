@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
@@ -143,6 +144,85 @@ func TestResponsesViaChatIntegration_MiniMaxNonStreamInstructionsReplacement(t *
 	}
 	if saved.Messages[0].Role == "system" && saved.Messages[0].StringContent() == "new instructions" {
 		t.Fatalf("instruction-rendered system message should not be persisted in transcript")
+	}
+}
+
+func TestResponsesHelper_OpenAIChannelUsesConfiguredResponsesViaChatFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	disableConsumeLogForTest(t)
+
+	var capturedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		var req dto.GeneralOpenAIRequest
+		if err := common.DecodeJson(r.Body, &req); err != nil {
+			t.Fatalf("decode openai-compatible chat request failed: %v", err)
+		}
+		if req.Model != "GLM-5.1" {
+			t.Fatalf("upstream model = %q, want GLM-5.1", req.Model)
+		}
+		resp := dto.OpenAITextResponse{
+			Id:      "chatcmpl_openai_compatible_1",
+			Object:  "chat.completion",
+			Created: time.Now().Unix(),
+			Model:   req.Model,
+			Choices: []dto.OpenAITextResponseChoice{
+				{
+					Index: 0,
+					Message: dto.Message{
+						Role:    "assistant",
+						Content: "OK",
+					},
+					FinishReason: "stop",
+				},
+			},
+			Usage: dto.Usage{},
+		}
+		raw, _ := common.Marshal(resp)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(raw)
+	}))
+	defer server.Close()
+
+	c, rec := newResponsesTestContext("it_openai_compat_fallback_1", "/v1/responses")
+	c.Set(string(constant.ContextKeyChannelType), constant.ChannelTypeOpenAI)
+	c.Set(string(constant.ContextKeyChannelId), 101)
+	c.Set(string(constant.ContextKeyChannelBaseUrl), server.URL)
+	c.Set(string(constant.ContextKeyChannelKey), "sk-test")
+	c.Set(string(constant.ContextKeyOriginalModel), "GLM-5.1")
+	c.Set(string(constant.ContextKeyChannelSetting), dto.ChannelSettings{})
+	c.Set(string(constant.ContextKeyChannelOtherSetting), dto.ChannelOtherSettings{
+		ResponsesViaChatEnabled: true,
+	})
+
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "GLM-5.1",
+		RelayMode:       relayconstant.RelayModeResponses,
+		RequestURLPath:  "/v1/responses",
+		Request: &dto.OpenAIResponsesRequest{
+			Model: "GLM-5.1",
+			Input: mustMarshal(t, "hello"),
+		},
+	}
+	info.SetEstimatePromptTokens(16)
+
+	if newAPIErr := ResponsesHelper(c, info); newAPIErr != nil {
+		t.Fatalf("ResponsesHelper returned error: %v", newAPIErr)
+	}
+	if capturedPath != "/v1/chat/completions" {
+		t.Fatalf("captured upstream path = %q, want /v1/chat/completions", capturedPath)
+	}
+	var resp dto.OpenAIResponsesResponse
+	if err := common.Unmarshal(common.StringToByteSlice(rec.Body.String()), &resp); err != nil {
+		t.Fatalf("parse responses payload failed: %v; body=%s", err, rec.Body.String())
+	}
+	if resp.ID == "" || !strings.HasPrefix(resp.ID, "resp_") {
+		t.Fatalf("response id = %q, want resp_ prefix", resp.ID)
 	}
 }
 
